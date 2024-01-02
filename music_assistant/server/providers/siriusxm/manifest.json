@@ -1,0 +1,10 @@
+{
+  "type": "music",
+  "domain": "siriusxm",
+  "name": "SiriusXM",
+  "description": "Provider for Sirius XM radio. You will require a valid",
+  "codeowners": ["@music-assistant"],
+  "requirements": [],
+  "documentation": "https://github.com/music-assistant/hass-music-assistant/discussions/TODO",
+  "multi_instance": false
+}
