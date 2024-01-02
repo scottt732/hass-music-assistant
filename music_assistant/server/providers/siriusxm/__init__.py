@@ -3,14 +3,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import AsyncGenerator
-from itertools import islice, zip_longest
-import json
-import sys
-from time import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator, Union, Dict, Final
 
-import aiohttp
-import sxm.models
 from sxm import SXMClientAsync
 from sxm.models import QualitySize, RegionChoice, XMCategory, XMChannel, XMLiveChannel
 
@@ -25,17 +19,11 @@ from music_assistant.common.models.media_items import (
     MediaItemType,
     MediaType,
     ProviderMapping,
-    Playlist,
     Radio,
     StreamDetails
 )
-from music_assistant.server.controllers.cache import use_cache
-from music_assistant.server.helpers.audio import get_radio_stream
-from music_assistant.server.helpers.playlists import fetch_playlist
-from music_assistant.server.helpers.tags import AudioTags, parse_tags
 from music_assistant.server.models.music_provider import MusicProvider
 
-# ProviderFeature.SEARCH,
 SUPPORTED_FEATURES = (ProviderFeature.BROWSE, ProviderFeature.LIBRARY_RADIOS,)
 
 if TYPE_CHECKING:
@@ -73,14 +61,15 @@ async def setup(
     return prov
 
 
+# noinspection PyUnusedLocal
 async def get_config_entries(
-        mass: MusicAssistant,
-        instance_id: str | None = None,
-        action: str | None = None,
-        values: dict[str, ConfigValueType] | None = None,
+    mass: MusicAssistant,
+    instance_id: str | None = None,
+    action: str | None = None,
+    values: dict[str, ConfigValueType] | None = None,
 ) -> tuple[ConfigEntry, ...]:
     """
-    Return Config entries to setup this provider.
+    Return Config entries to set up this provider.
     instance_id: id of an existing provider instance (None if new instance setup).
     action: [optional] action key called from config entries UI.
     values: the (intermediate) raw values for config entries sent with the action.
@@ -248,13 +237,13 @@ class SiriusXMProvider(MusicProvider):
 
     async def get_stream_details(self, item_id: str) -> StreamDetails:
         """Get StreamDetails for a radio station."""
-        channel_id = item_id
-        channel = self._channels_by_id[channel_id]
+        # channel_id = item_id
+        # channel = self._channels_by_id[channel_id]
 
-        playlist = await self._client.get_playlist(channel.id, use_cache=False)
-        playlist_items = list(filter(lambda l: not l.startswith("#"), playlist.split('\n')))
+        # playlist = await self._client.get_playlist(channel.id, use_cache=False)
+        # playlist_items = list(filter(lambda l: not l.startswith("#"), playlist.split('\n')))
 
-        first_segment = await self._client.get_segment(playlist_items[0])
+        # first_segment = await self._client.get_segment(playlist_items[0])
 
         # primary_hls_root = await self._client.get_primary_hls_root()
         # first_item = f"{primary_hls_root}/{playlist_items[0]}"
@@ -318,7 +307,6 @@ class SiriusXMProvider(MusicProvider):
         async for chunk in self.get_playlist_items_generator(stream_details):
             yield bytes(chunk)
 
-
     def _parse_radio(self, channel: XMChannel) -> Radio:
         """Parse Radio object from json obj returned from api."""
         is_favorite = channel in self._favorite_channels
@@ -376,8 +364,8 @@ class SiriusXMProvider(MusicProvider):
                     channels_by_era[era].append(channel)
 
             for category in channel.categories:
-                category_is_decade = category.key in DECADE_CATEGORY_KEY_RANGES
-                category_decade = DECADE_CATEGORY_KEY_RANGES[category.key] if category_is_decade else None
+                # category_is_decade = category.key in DECADE_CATEGORY_KEY_RANGES
+                # category_decade = DECADE_CATEGORY_KEY_RANGES[category.key] if category_is_decade else None
 
                 if category.key not in categories:
                     categories[category.key] = category
@@ -393,7 +381,7 @@ class SiriusXMProvider(MusicProvider):
                 sort_order_by_category[category_key] = min(sort_order_by_category[category_key], min_channel_number)
 
         channels_by_id = dict(sorted(channels_by_id.items(), key=lambda x: x[1].channel_number))
-        sort_order_by_category = dict(sorted(sort_order_by_category.items(), key=lambda x: x[1]))
+        # sort_order_by_category = dict(sorted(sort_order_by_category.items(), key=lambda x: x[1]))
         # categories = dict(sorted(categories.items(), key=lambda x: sort_order_by_category[x[0]]))
         # channels_by_category = dict(sorted(channels_by_category.items(), key=lambda x: int(sort_order_by_category[x[0]])))
 
@@ -407,7 +395,7 @@ class SiriusXMProvider(MusicProvider):
 
         self.logger.info(f"Refreshing favorites...")
         favorite_channels: list[XMChannel] = await self._client.favorite_channels
-        self._favorite_channels = await self._client.favorite_channels
+        self._favorite_channels = favorite_channels
 
         self.logger.info(
             f"Discovered {len(self._channels_by_id)} channels, {len(self._categories)} categories, {len(self._favorite_channels)} favorites")
@@ -417,21 +405,6 @@ class SiriusXMProvider(MusicProvider):
             if era[0] <= year < era[1]:
                 return channels
         return []
-
-    @staticmethod
-    def _flatten_decades(ranges: list[(int, int)]) -> AsyncGenerator[(int, int), None]:
-        ranges = list(sorted(list(set(ranges)), key=lambda x: x[0]))
-        lower = ranges[0][0]
-        upper = ranges[0][1]
-        for i in range(1, len(ranges)):
-            if ranges[i][0] == ranges[i - 1][1]:
-                upper = ranges[i][1]
-            else:
-                yield lower, upper
-                lower = ranges[i][0]
-                upper = ranges[i][1]
-
-        yield lower, upper
 
     def _get_decades_and_eras(self, channel: XMChannel) -> [list[(int, int)], list[(int, int)]]:
         decades = []
@@ -447,3 +420,18 @@ class SiriusXMProvider(MusicProvider):
             eras = None
 
         return decades, eras
+
+    @staticmethod
+    def _flatten_decades(ranges: list[(int, int)]) -> Generator[(int, int), None, None]:
+        ranges = list(sorted(list(set(ranges)), key=lambda x: x[0]))
+        lower = ranges[0][0]
+        upper = ranges[0][1]
+        for i in range(1, len(ranges)):
+            if ranges[i][0] == ranges[i - 1][1]:
+                upper = ranges[i][1]
+            else:
+                yield lower, upper
+                lower = ranges[i][0]
+                upper = ranges[i][1]
+
+        yield lower, upper
